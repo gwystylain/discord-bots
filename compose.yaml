@@ -1,0 +1,23 @@
+# Local run: `docker compose up -d --build` (reads secrets from ./env/<bot>.env).
+# For TrueNAS use deploy/truenas.yaml, which pulls the prebuilt image from GitHub instead.
+name: discord-bots
+
+x-bot: &bot
+  image: ghcr.io/gwystylain/discord-bots:latest
+  build: .
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  ski-brief:
+    <<: *bot
+    command: ["python", "-m", "bots.ski_brief"]
+    env_file: ./env/ski-brief.env
+
+  # Add the next bot like this:
+  # my-new-bot:
+  #   <<: *bot
+  #   command: ["python", "-m", "bots.my_new_bot"]
+  #   env_file: ./env/my-new-bot.env

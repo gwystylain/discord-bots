@@ -1,0 +1,54 @@
+name: Build and publish image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: discord-bots:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test - every bot package imports and starts its CLI
+        run: |
+          for bot in $(ls -d bots/*/ | xargs -n1 basename | grep -v -e '^common$' -e '^__'); do
+            echo "== bots.$bot"
+            docker run --rm discord-bots:test python -m "bots.$bot" --help > /dev/null
+          done
+
+      - name: Push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
