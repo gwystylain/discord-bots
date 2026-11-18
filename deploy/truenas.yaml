@@ -1,5 +1,5 @@
 # TrueNAS SCALE: Apps -> Discover Apps -> (⋮) Install via YAML, name it "discord-bots", paste this.
-# Change /mnt/tank/apps/discord-bots to the dataset folder that holds your <bot>.env files.
+# Each bot reads its settings from <folder>/<bot>.env on the TrueNAS host.
 name: discord-bots
 
 x-bot: &bot
@@ -14,10 +14,10 @@ services:
   ski-brief:
     <<: *bot
     command: ["python", "-m", "bots.ski_brief"]
-    env_file: /mnt/tank/apps/discord-bots/ski-brief.env
+    env_file: /mnt/SSD/ApplicationsDataset/discord-bots/ski-brief.env
 
   # Add the next bot like this (one service per bot, same image):
   # my-new-bot:
   #   <<: *bot
   #   command: ["python", "-m", "bots.my_new_bot"]
-  #   env_file: /mnt/tank/apps/discord-bots/my-new-bot.env
+  #   env_file: /mnt/SSD/ApplicationsDataset/discord-bots/my-new-bot.env

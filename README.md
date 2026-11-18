@@ -38,12 +38,12 @@ Or in Docker: `docker compose up -d --build`.
 
 ## Deploy on TrueNAS SCALE
 
-1. **Settings files.** Make a dataset folder, e.g. `/mnt/tank/apps/discord-bots`, and put one
+1. **Settings files.** Make a dataset folder, e.g. `/mnt/SSD/ApplicationsDataset/discord-bots`, and put one
    `<bot>.env` file in it per bot (copy the template from `env/`, fill in the token and keys).
    The container runs as UID 10001, but the env file is read by Docker on the host, so it can be
    `root`-owned with mode `600`.
 2. **Install.** Apps → Discover Apps → ⋮ → **Install via YAML**. Name it `discord-bots` and paste
-   [`deploy/truenas.yaml`](deploy/truenas.yaml), with `/mnt/tank/apps/discord-bots` changed to
+   [`deploy/truenas.yaml`](deploy/truenas.yaml), with `/mnt/SSD/ApplicationsDataset/discord-bots` changed to
    your folder.
 3. **Logs.** Apps → discord-bots → the container's logs show `Logged in as ...` and the bot's
    invite link.
@@ -62,6 +62,6 @@ Or in Docker: `docker compose up -d --build`.
    my-new-bot:
      <<: *bot
      command: ["python", "-m", "bots.my_new_bot"]
-     env_file: /mnt/tank/apps/discord-bots/my-new-bot.env
+     env_file: /mnt/SSD/ApplicationsDataset/discord-bots/my-new-bot.env
    ```
 5. Push to `main`, then put the new `.env` file on TrueNAS and update the app's YAML.
