@@ -43,8 +43,7 @@ Or in Docker: `docker compose up -d --build`.
    The container runs as UID 10001, but the env file is read by Docker on the host, so it can be
    `root`-owned with mode `600`.
 2. **Install.** Apps → Discover Apps → ⋮ → **Install via YAML**. Name it `discord-bots` and paste
-   [`deploy/truenas.yaml`](deploy/truenas.yaml), with `/mnt/SSD/ApplicationsDataset/discord-bots` changed to
-   your folder.
+   [`deploy/truenas.yaml`](deploy/truenas.yaml) (its paths point at that folder).
 3. **Logs.** Apps → discord-bots → the container's logs show `Logged in as ...` and the bot's
    invite link.
 4. **Update after a push.** Wait for the GitHub Action to finish, then in TrueNAS stop and start
