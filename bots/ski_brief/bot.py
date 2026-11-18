@@ -256,7 +256,11 @@ The station's snow-depth changes come from a depth sensor and can be noisy (e.g.
 than the 7 d gain). If they look inconsistent, say so briefly and lean on the forecast.
 
 Write for Discord, under 1400 characters:
-- Line 1: a bold one-line verdict with a score, e.g. **Verdict: 3/5 - decent Saturday, skip Sunday**
+- Line 1: a bold one-line verdict with a score for the best weekend day, e.g. \
+**Verdict: 3/5 - decent Saturday, skip Sunday**. The score sets the post's headline, so use this \
+scale (half points allowed): 5 = deep fresh snow on a solid base, drop everything and go; \
+4 = good day, worth the trip; 3 = decent, skiable; 2 = marginal, more hike than ski; \
+1 = not worth going (thin cover, rain, crust, or dangerous). Only write "/5" in this line.
 - Then short bullets covering each weekend day (and the key lead-up conditions).
 - Finish with one line on the best window or a suggestion.
 Use **bold** and "- " bullets only: no headings, no tables. Quote real numbers from the data. \
@@ -376,6 +380,69 @@ def plain_brief(forecasts, station, avalanche, weekend):
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------- skiability tiers
+
+# (minimum score out of 5, embed color, headline)
+TIERS = [
+    (4.5, 0x9B59B6, "🚨❄️ **DROP EVERYTHING AND SKI THE BIG POW.** Cancel plans, charge the headlamp, "
+                    "be at the lot at first light."),
+    (3.5, 0x2ECC71, "⛷️ **Get out there.** Good conditions, worth the drive up to Diamond Head."),
+    (2.5, 0xF1C40F, "🤷 **Decent if you're itching.** Skiable, but don't cancel anything for it."),
+    (1.5, 0xE67E22, "😬 **Meh.** Probably not worth the drive. Go for the exercise, not the turns."),
+    (0.0, 0x95A5A6, "🎮 **Best stay home and game it up at Activate.** The mountain isn't ready for us."),
+]
+
+
+def tier_for(score):
+    return next((color, line) for floor, color, line in TIERS if score >= floor)
+
+
+def claude_score(text):
+    """Pull the N out of Claude's '**Verdict: N/5 ...**' line."""
+    m = re.search(r"(\d(?:\.\d)?)\s*/\s*5", text)
+    return float(m.group(1)) if m and 0 <= float(m.group(1)) <= 5 else None
+
+
+def day_score(forecasts, station, avalanche, day):
+    """Rough 0-5 skiability score for one day, from the raw numbers (used without Claude)."""
+    top = forecasts.get(1646)
+    if not top:
+        return None
+    iso = day.isoformat()
+    ps = [p for p in top["periods"] if p["date"] == iso]
+    if not ps:
+        return None
+    # New snow in the two days before plus the day itself (only the AM period of the day counts).
+    lead = [p for p in top["periods"]
+            if day - dt.timedelta(days=2) <= dt.date.fromisoformat(p["date"]) < day or p in ps[:1]]
+    new_snow = sum(p["snow_cm"] for p in lead)
+    rain = sum(p["rain_mm"] for p in lead)
+    wind = max((p["wind_kmh"] or 0) for p in ps)
+    freezing = max((p["freezing_level_m"] or 0) for p in ps)
+    clear = any(p["weather"] and ("clear" in p["weather"] or "some clouds" in p["weather"]) for p in ps)
+
+    score = 3.0
+    depth = station.get("snow_depth_cm") if station else None
+    if depth is not None:
+        score += -2 if depth < 30 else -1 if depth < 60 else 0.5 if depth >= 120 else 0
+    score += 2 if new_snow >= 30 else 1 if new_snow >= 15 else 0.5 if new_snow >= 5 else -0.5 if new_snow < 2 else 0
+    if new_snow >= 10 and clear:
+        score += 0.5  # bluebird after a storm
+    if rain > 2:
+        score -= 1.5
+    if freezing > 1700:
+        score -= 1
+    score -= 1 if wind >= 50 else 0.5 if wind >= 35 else 0
+    if avalanche:
+        ratings = next((d for d in avalanche["danger_ratings"] if d["date"] == iso), {})
+        tln = str(ratings.get("Treeline", "")).lower()
+        if "high" in tln or "extreme" in tln:
+            score = min(score - 2, 2)
+        elif "considerable" in tln:
+            score -= 0.5
+    return max(0.0, min(5.0, score))
+
+
 _cache = {"at": 0.0, "brief": None}
 
 
@@ -398,9 +465,24 @@ async def make_brief(use_cache=True):
     if text is None:
         text = plain_brief(forecasts, station, avalanche, weekend)
 
+    # Headline tier: Claude's own verdict score if it wrote the brief, else the best weekend day's
+    # rough score from the numbers.
+    score = claude_score(text) if by_ai else None
+    caveman = score is None
+    if caveman:
+        scores = [s for d in weekend if (s := day_score(forecasts, station, avalanche, d)) is not None]
+        score = max(scores) if scores else None
+    color, headline = tier_for(score) if score is not None else (0x4A90D9, None)
+    if headline:
+        if caveman:
+            headline += f" (caveman score {score:g}/5)"
+        text = f"{headline}\n\n{text}"
+
     brief = {
         "title": f"Ski brief: weekend of {weekend[0]:%b %d}",
         "text": text,
+        "color": color,
+        "score": score,
         "footer": " · ".join(filter(None, [
             f"Snower {station['station']} @ {dt.datetime.fromisoformat(station['measured_at']).astimezone(TZ):%a %H:%M}"
             if station and station.get("measured_at") else None,
@@ -434,7 +516,7 @@ def run_bot():
 
     def to_embed(brief):
         embed = discord.Embed(
-            title=brief["title"], description=brief["text"][:4096], color=0x4A90D9, url=FORECAST_URL
+            title=brief["title"], description=brief["text"][:4096], color=brief["color"], url=FORECAST_URL
         )
         embed.set_footer(text=brief["footer"])
         return embed
