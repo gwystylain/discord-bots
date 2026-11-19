@@ -11,7 +11,7 @@ Every push to `main` builds the image and publishes it to
 | Bot | Package | What it does |
 | --- | --- | --- |
 | Red Heather report | `bots/ski_brief` | `/skibrief` plus a weekly post: is skiing at Red Heather / Paul Ridge good this weekend? Combines mountain-forecast.com (1646 m and the 1000 m parking lot), the Snower "Paul Ridge" snow station and Avalanche Canada; Claude writes the brief. |
-| Activate roast | `bots/activate_brief` | `/roast` plus an optional weekly post: who's been showing up at Activate and who's slacking, for FaffKing, GMEBagholder, Roboterson and xXNoobBotXx420. Posts the text from the Activate tracker's `/api/brief` at activate.noobatron.duckdns.org. |
+| Activate roast | `bots/activate_brief` | `/roast` plus an optional weekly post: who's been showing up at Activate and who's slacking, for FaffKing, GMEBagholder, Roboterson and xXNoobBotXx420. `/trivia [location]`: their Hoops Trivia rankings per location. Posts the text from the Activate tracker's `/api/brief` and `/api/rankings` at activate.noobatron.duckdns.org. |
 
 ## Layout
 

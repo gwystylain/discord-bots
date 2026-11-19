@@ -1,12 +1,14 @@
-"""Discord bot that posts the Activate tracker's roast of our crew.
+"""Discord bot that posts the Activate tracker's roast of our crew and their Hoops Trivia rankings.
 
-The tracker (activateTracker) does all the work: `GET /api/brief?players=...&days=N` answers
-`{"text": <Discord Markdown, at most 2000 chars>, "players": [...], "as_of", "window_days"}`, and
-this bot posts `text` as is. For now it always asks about the same four players (PLAYERS below).
+The tracker (activateTracker) does all the work and this bot posts its `text` (Discord Markdown,
+at most 2000 chars) as is. For now it always asks about the same four players (PLAYERS below).
+    /roast    GET /api/brief?players=...&days=N       who's been showing up, and who hasn't
+    /trivia   GET /api/rankings?players=...&location=  Hoops Trivia standings per location
 
 Usage (from the repo root):
-    python -m bots.activate_brief --print   # fetch the brief and print it (no Discord needed)
-    python -m bots.activate_brief           # run the bot: /roast command + optional weekly post
+    python -m bots.activate_brief --print            # fetch the roast and print it (no Discord needed)
+    python -m bots.activate_brief --print --trivia   # same for the Hoops Trivia rankings
+    python -m bots.activate_brief                    # run the bot: /roast, /trivia + optional weekly post
 
 Config (env/activate-brief.env locally, the compose env_file in Docker, or environment variables):
     DISCORD_BOT_TOKEN        bot token from the Discord developer portal (required to run the bot)
@@ -43,23 +45,36 @@ class BriefError(Exception):
     """Something to say in the channel instead of the brief."""
 
 
-async def fetch_brief(days=DAYS):
-    """The tracker's JSON for PLAYERS over the last `days` days."""
-    url = f"{BASE_URL}/api/brief"
-    params = {"players": ",".join(PLAYERS), "days": days}
+async def _get(path, params):
+    """GET one of the tracker's /api/ endpoints for PLAYERS; its 404s become BriefErrors."""
+    url = f"{BASE_URL}{path}"
     try:
         async with httpx.AsyncClient(timeout=20) as http:
-            r = await http.get(url, params=params)
+            r = await http.get(url, params={"players": ",".join(PLAYERS), **params})
     except httpx.HTTPError as e:
         raise BriefError(f"Couldn't reach the Activate tracker at {BASE_URL} ({type(e).__name__}).") from e
     if r.status_code == 404:
         body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
         if body.get("unknown"):
             raise BriefError("The tracker doesn't know " + ", ".join(f"**{n}**" for n in body["unknown"]) + ".")
-        raise BriefError(f"The tracker has no brief at {url} - is it running a version with /api/brief?")
+        if body.get("error") == "unknown location":
+            raise BriefError(f"The tracker doesn't track a location called **{body.get('location')}**.")
+        if body.get("error"):
+            raise BriefError(f"The tracker says: {body['error']}.")
+        raise BriefError(f"The tracker has nothing at {url} - is it running a version with {path}?")
     if r.status_code != 200:
         raise BriefError(f"The tracker answered HTTP {r.status_code}.")
     return r.json()
+
+
+async def fetch_brief(days=DAYS):
+    """The tracker's roast of PLAYERS over the last `days` days."""
+    return await _get("/api/brief", {"days": days})
+
+
+async def fetch_trivia(location=None):
+    """PLAYERS' Hoops Trivia standings at every tracked location, or just `location`."""
+    return await _get("/api/rankings", {"location": location} if location else {})
 
 
 def message_text(brief):
@@ -87,9 +102,9 @@ def run_bot():
     # The brief bolds names but never pings; make sure a stray @ in a display name can't either.
     quiet = discord.AllowedMentions.none()
 
-    async def brief_or_error(days=DAYS):
+    async def text_or_error(fetch):
         try:
-            return message_text(await fetch_brief(days))
+            return message_text(await fetch)
         except BriefError as e:
             return f"⚠️ {e}"
 
@@ -97,7 +112,13 @@ def run_bot():
     @app_commands.describe(days="How many days back to look (default from the bot's settings)")
     async def roast(interaction: discord.Interaction, days: app_commands.Range[int, 1, 365] = DAYS):
         await interaction.response.defer(thinking=True)
-        await interaction.followup.send(await brief_or_error(days), allowed_mentions=quiet)
+        await interaction.followup.send(await text_or_error(fetch_brief(days)), allowed_mentions=quiet)
+
+    @tree.command(name="trivia", description="Hoops Trivia rankings at each Activate location")
+    @app_commands.describe(location="Just one location, e.g. Langley or Coquitlam (default: all of them)")
+    async def trivia(interaction: discord.Interaction, location: str | None = None):
+        await interaction.response.defer(thinking=True)
+        await interaction.followup.send(await text_or_error(fetch_trivia(location)), allowed_mentions=quiet)
 
     @tasks.loop(time=dt.time(hour=hh, minute=mm, tzinfo=TZ))
     async def weekly_post():
@@ -127,7 +148,7 @@ def run_bot():
                 await tree.sync()  # global commands can take up to an hour to appear
         except discord.Forbidden:
             state["command"] = "NOT registered (see above)"
-            print(f"Can't register /roast in server {guild_id}: the bot isn't in that server, or was "
+            print(f"Can't register /roast and /trivia in server {guild_id}: the bot isn't in that server, or was "
                   f"invited without the applications.commands scope. Invite it with:\n  {invite_url()}\n"
                   "then restart the bot.", file=sys.stderr)
         if channel_id:
@@ -137,7 +158,7 @@ def run_bot():
     async def on_ready():
         sched = (f"weekly post {WEEKDAYS[post_day]} {hh:02d}:{mm:02d} to #{channel_id}"
                  if channel_id else "no weekly post")
-        print(f"Logged in as {client.user} - /roast {state['command']}, {sched}, tracker {BASE_URL}\n"
+        print(f"Logged in as {client.user} - /roast + /trivia {state['command']}, {sched}, tracker {BASE_URL}\n"
               f"Invite link: {invite_url()}")
 
     client.run(token)
@@ -147,16 +168,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--print", action="store_true", help="print the brief to the console instead of running the bot")
     ap.add_argument("--days", type=int, default=DAYS, help=f"with --print, the window in days (default {DAYS})")
+    ap.add_argument("--trivia", action="store_true", help="with --print, print the Hoops Trivia rankings instead")
+    ap.add_argument("--location", help="with --trivia, just this location (default: all)")
     args = ap.parse_args()
     if args.print:
         if hasattr(sys.stdout, "reconfigure"):
             sys.stdout.reconfigure(encoding="utf-8")
         try:
-            brief = asyncio.run(fetch_brief(args.days))
+            data = asyncio.run(fetch_trivia(args.location) if args.trivia else fetch_brief(args.days))
         except BriefError as e:
             sys.exit(str(e))
-        print(f"[as of {brief.get('as_of')}, last {brief.get('window_days')} days]\n")
-        print(message_text(brief))
+        print(message_text(data))
     else:
         run_bot()
 
