@@ -16,6 +16,11 @@ services:
     command: ["python", "-m", "bots.ski_brief"]
     env_file: /mnt/SSD/ApplicationsDataset/discord-bots/ski-brief.env
 
+  activate-brief:
+    <<: *bot
+    command: ["python", "-m", "bots.activate_brief"]
+    env_file: /mnt/SSD/ApplicationsDataset/discord-bots/activate-brief.env
+
   # Add the next bot like this (one service per bot, same image):
   # my-new-bot:
   #   <<: *bot
